@@ -19,6 +19,7 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <unistd.h>
 
 #define MAX_STRING 10000
 #define EXP_TABLE_SIZE 1000
@@ -260,7 +261,7 @@ void ReadVectors(real *word_vectors, char *embeddings_filename) {
       assert(buffer != NULL);
       vector_size = atoi(buffer);
       assert(vector_size > 0);
-      continue; 
+      continue;
     }
     
     // each line consists of the word and its embeddings. only read the word.
@@ -644,9 +645,8 @@ void *TrainModelThread(void *id) {
                 neu1e[c] += g * syn1neg[c + l2];
               }
 
-              // update the (context embedding) for the current target word in syn1neg
-              if (!vocab[target].fixed) {
-                assert (strcmp(vocab[target].word, "cs:a") != 0);
+              // Update the (context embedding) for the current target word in syn1neg
+              if (!vocab[target].fixed || !fixed_context_vectors_file[0]) {
                 for (c = 0; c < layer1_size; c++) { 
                   syn1neg[c + l2] += g * syn0[c + l1]; 
                 }
@@ -656,7 +656,6 @@ void *TrainModelThread(void *id) {
           // Learn weights input -> hidden
           // update the (word embedding) for the current context word in syn0
           if (!vocab[last_word].fixed) {
-            assert (strcmp(vocab[last_word].word, "cs:a") != 0);
             for (c = 0; c < layer1_size; c++) { 
               syn0[c + l1] += neu1e[c]; 
             }
@@ -725,8 +724,8 @@ void TrainModel() {
       fprintf(fo, "%lld %lld\n", vocab_size, layer1_size);
     }
     for (a = 0; a < vocab_size; a++) {
-      // skip words which we already have embeddings for
-      if (vocab[a].fixed) { continue; }
+      // skip contexts which we already have embeddings for
+      if (vocab[a].fixed && fixed_context_vectors_file[0]) { continue; }
       fprintf(fo, "%s ", vocab[a].word);
       if (binary) for (b = 0; b < layer1_size; b++) fwrite(&syn1neg[a * layer1_size + b], sizeof(real), 1, fo);
       else for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", syn1neg[a * layer1_size + b]);
@@ -806,8 +805,16 @@ int main(int argc, char **argv) {
   if ((i = ArgPos((char *)"-train", argc, argv)) > 0) strcpy(train_file, argv[i + 1]);
   if ((i = ArgPos((char *)"-fix-embeddings", argc, argv)) > 0) {
     strcpy(fixed_word_vectors_file, argv[i + 1]);
+    if (access( fixed_word_vectors_file, F_OK ) == -1) {
+      // fixed word embeddings file does not exist
+      fixed_word_vectors_file[0] = 0;
+    }
     strcpy(fixed_context_vectors_file, fixed_word_vectors_file);
     strcat(fixed_context_vectors_file, ".context");
+    if (access( fixed_context_vectors_file, F_OK ) == -1) {
+      // fixed context embeddings file does not exist
+      fixed_context_vectors_file[0] = 0;
+    }
   }
   if ((i = ArgPos((char *)"-save-vocab", argc, argv)) > 0) strcpy(save_vocab_file, argv[i + 1]);
   if ((i = ArgPos((char *)"-read-vocab", argc, argv)) > 0) strcpy(read_vocab_file, argv[i + 1]);
